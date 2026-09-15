@@ -496,6 +496,62 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		// Regression tests for https://github.com/earendil-works/pi/issues/9577
+		it.skipIf(process.platform === "win32")(
+			"should map signal-killed commands to 128 + signal number in local bash operations",
+			async () => {
+				const ops = createLocalBashOperations();
+				for (const { signal, exitCode } of [
+					{ signal: "KILL", exitCode: 128 + 9 },
+					{ signal: "TERM", exitCode: 128 + 15 },
+				]) {
+					const result = await ops.exec(`kill -${signal} $$`, testDir, { onData: () => {} });
+					expect(result.exitCode).toBe(exitCode);
+				}
+			},
+		);
+
+		it.skipIf(process.platform === "win32")(
+			"should reject signal-killed commands and keep their output",
+			async () => {
+				for (const { signal, exitCode } of [
+					{ signal: "KILL", exitCode: 128 + 9 },
+					{ signal: "TERM", exitCode: 128 + 15 },
+				]) {
+					const execution = bashTool.execute(`test-call-signal-${signal}`, {
+						command: `printf 'before-kill\\n'; kill -${signal} $$`,
+					});
+					await expect(execution).rejects.toThrow(
+						new RegExp(`before-kill\\s+Command exited with code ${exitCode}$`),
+					);
+				}
+			},
+		);
+
+		it("should reject when custom operations report a null exit code", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("partial\n", "utf-8"));
+					return { exitCode: null };
+				},
+			};
+			const bash = createBashTool(testDir, { operations });
+
+			await expect(bash.execute("test-call-null-exit", { command: "remote" })).rejects.toThrow(
+				/partial\s+Command terminated without an exit code$/,
+			);
+		});
+
+		it.skipIf(process.platform === "win32")(
+			"executeBash should report signal-killed commands as failed",
+			async () => {
+				const result = await executeBashWithOperations("kill -KILL $$", testDir, createLocalBashOperations());
+
+				expect(result.cancelled).toBe(false);
+				expect(result.exitCode).toBe(128 + 9);
+			},
+		);
+
 		it("should respect timeout", async () => {
 			const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setInterval(() => {}, 1000)")}`;
 			await expect(bashTool.execute("test-call-10", { command, timeout: 0.05 })).rejects.toThrow(/timed out/i);
