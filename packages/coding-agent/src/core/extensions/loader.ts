@@ -286,16 +286,11 @@ function createExtensionAPI(
 
 			return () => {
 				const handlers = extension.handlers.get(event);
-				if (!handlers?.includes(registeredHandler)) return;
-
-				// WIP (#8967): handlers registered for this event after removal miss an ongoing
-				// dispatch that still holds the old list, unlike registration without removal.
-				const remaining = handlers.filter((entry) => entry !== registeredHandler);
-				if (remaining.length === 0) {
-					extension.handlers.delete(event);
-				} else {
-					extension.handlers.set(event, remaining);
-				}
+				if (!handlers) return;
+				const handlerIndex = handlers.indexOf(registeredHandler);
+				if (handlerIndex === -1) return;
+				handlers.splice(handlerIndex, 1);
+				if (handlers.length === 0) extension.handlers.delete(event);
 			};
 		},
 
