@@ -3,6 +3,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { constants as osConstants } from "node:os";
 import { waitForChildProcess } from "../utils/child-process.ts";
 
 /**
@@ -94,7 +95,15 @@ export async function execCommand(
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
-				resolve({ stdout, stderr, code: code ?? 0, killed });
+				// A process killed by a signal has no exit code. Map it to the shell convention of
+				// 128 + signal number (137 for SIGKILL) so callers do not mistake it for success.
+				const signalCode = proc.signalCode;
+				resolve({
+					stdout,
+					stderr,
+					code: code ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1),
+					killed,
+				});
 			})
 			.catch((_err) => {
 				if (timeoutId) clearTimeout(timeoutId);
